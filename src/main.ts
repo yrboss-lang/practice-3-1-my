@@ -3,24 +3,27 @@ import { Book } from './task1-types';
 import { applyFilters, filterByAuthor, filterByMinYear } from './task3-filters';
 import { createBookFromForm } from './task4-integration';
 import { filterByTitle, sortBooks } from './task5-utils';
-// TODO 3.0: импортируем BookCatalog из task6
 import { BookCatalog } from './task6-classes';
+// TODO: Импортируем класс Wishlist
+import { Wishlist } from './task7-wishlist';
 
-// TODO 3.1: каталог — экземпляр класса BookCatalog.
-// Тип Catalog больше не нужен, убрали импорт.
+// Каталог — экземпляр класса BookCatalog
 let catalog = new BookCatalog('main', [
   { id: '1', title: 'TypeScript Guide', authors: ['John Doe'], year: 2024 },
   { id: '2', title: 'JavaScript Basics', authors: ['Jane Smith'], year: 2022 },
 ]);
 
-// восстановление из localStorage
-// TODO 3.2: JSON.parse возвращает объект БЕЗ методов,
-// поэтому пересоздаём экземпляр BookCatalog.
+// Восстановление каталога из localStorage
 const saved = localStorage.getItem('catalog');
 if (saved) {
   const parsed = JSON.parse(saved);
   catalog = new BookCatalog(parsed.id, parsed.books);
 }
+
+// Задание 4: Инициализация Wishlist с восстановлением из localStorage
+const savedWishlist = localStorage.getItem('wishlist');
+const initialIds = savedWishlist ? JSON.parse(savedWishlist) : [];
+const wishlist = new Wishlist(initialIds);
 
 // сохранение в localStorage
 function saveCatalog() {
@@ -28,6 +31,11 @@ function saveCatalog() {
     id: catalog.id,
     books: catalog.getBooks(),
   }));
+}
+
+// Задание 4: сохранение вишлиста
+function saveWishlist() {
+  localStorage.setItem('wishlist', JSON.stringify(wishlist.getIds()));
 }
 
 // DOM-элементы
@@ -39,8 +47,52 @@ const yearInput = document.querySelector('#filterYear') as HTMLInputElement;
 const errorMessage = document.querySelector('#errorMessage') as HTMLDivElement;
 const searchInput = document.querySelector('#searchInput') as HTMLInputElement;
 const sortBySelect = document.querySelector('#sortBy') as HTMLSelectElement;
+const wishlistContainer = document.querySelector('#wishlistContainer') as HTMLDivElement;
 
-// отрисовка
+// Задание 3: Выносим создание карточки в отдельную функцию
+function createBookCard(book: Book): HTMLDivElement {
+  const card = document.createElement('div');
+  card.className = 'book-card';
+
+  const titleEl = document.createElement('h3');
+  titleEl.textContent = `${book.title} — ${book.authors.join(', ')}${book.year ? `, ${book.year}` : ''}`;
+  card.append(titleEl);
+
+  if (book.rating !== undefined) {
+    const ratingEl = document.createElement('p');
+    ratingEl.textContent = `Рейтинг: ${book.rating}`;
+    card.append(ratingEl);
+  }
+
+  // Кнопка «Удалить»
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = 'Удалить';
+  deleteBtn.addEventListener('click', () => {
+    catalog.removeBook(book.id);
+    saveCatalog();
+    // Перерисовываем и каталог, и вишлист (так как книга могла быть в избранном)
+    renderBooks(catalog.getBooks());
+    renderWishlist();
+  });
+  card.append(deleteBtn);
+
+  // Задание 2: Кнопка «Избранное»
+  const favBtn = document.createElement('button');
+  // Проверяем, в избранном ли книга
+  favBtn.textContent = wishlist.has(book.id) ? '❤️ В избранном' : '🤍 В избранное';
+  favBtn.addEventListener('click', () => {
+    wishlist.toggle(book.id);
+    saveWishlist();
+    // Перерисовываем основной список (чтобы обновить текст кнопки) и вишлист
+    renderBooks(catalog.getBooks());
+    renderWishlist();
+  });
+  card.append(favBtn);
+
+  return card;
+}
+
+// Отрисовка каталога
 function renderBooks(books: Book[]) {
   bookList.innerHTML = '';
 
@@ -50,36 +102,31 @@ function renderBooks(books: Book[]) {
   }
 
   books.forEach(book => {
-    const card = document.createElement('div');
-    card.className = 'book-card';
+    bookList.append(createBookCard(book));
+  });
+}
 
-    const titleEl = document.createElement('h3');
-    titleEl.textContent = `${book.title} — ${book.authors.join(', ')}${book.year ? `, ${book.year}` : ''}`;
-    card.append(titleEl);
+// Задание 3: Отрисовка блока «Избранное»
+function renderWishlist() {
+  wishlistContainer.innerHTML = '';
+  
+  // Зависимость: получаем полные объекты книг из каталога через параметр
+  const favBooks = wishlist.getFavorites(catalog);
 
-    if (book.rating !== undefined) {
-      const ratingEl = document.createElement('p');
-      ratingEl.textContent = `Рейтинг: ${book.rating}`;
-      card.append(ratingEl);
-    }
+  if (favBooks.length === 0) {
+    wishlistContainer.textContent = 'Пока ничего не добавлено';
+    return;
+  }
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.textContent = 'Удалить';
-    deleteBtn.addEventListener('click', () => {
-      // TODO 3.3: метод класса вместо функционального removeBook
-      catalog.removeBook(book.id);
-      saveCatalog();
-      // TODO 3.4: метод getBooks() вместо Object.values(catalog)
-      renderBooks(catalog.getBooks());
-    });
-    card.append(deleteBtn);
-
-    bookList.append(card);
+  favBooks.forEach(book => {
+    // Переиспользуем функцию создания карточки
+    wishlistContainer.append(createBookCard(book));
   });
 }
 
 // Первичная отрисовка
 renderBooks(catalog.getBooks());
+renderWishlist();
 
 // обработчик формы
 form.addEventListener('submit', (e) => {
@@ -89,13 +136,12 @@ form.addEventListener('submit', (e) => {
     const formData = new FormData(form);
     const newBook = createBookFromForm(formData);
 
-    // TODO 3.5: метод класса вместо функционального addBook
     catalog.addBook(newBook);
-
     saveCatalog();
     form.reset();
 
     renderBooks(catalog.getBooks());
+    // Вишлист не меняется при добавлении новой книги, но для порядка можно вызвать
   } catch (error) {
     if (error instanceof Error) {
       errorMessage.textContent = error.message;
@@ -111,7 +157,6 @@ function refreshList() {
   if (yearInput.value) filters.push(filterByMinYear(parseInt(yearInput.value, 10)));
   if (searchInput.value.trim()) filters.push(filterByTitle(searchInput.value.trim()));
 
-  // используем метод getBooks() вместо Object.values(catalog)
   const allBooks = catalog.getBooks();
   const filteredBooks = applyFilters(allBooks, filters);
 
